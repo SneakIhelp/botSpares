@@ -70,39 +70,49 @@ def choose_products(message):
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call: CallbackQuery):
     user_id = call.from_user.id
+    global delivery_day
+    days_week = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
     product_id = ""
     if call.data not in models:
-        if call.data != "user_data":
-            product_id = int(call.data[call.data.find("_") + 1:])
-        if user_id not in cart:
-            cart[user_id] = {}
-        if call.data.startswith("add_"):
-            if product_id in cart[user_id]:
-                cart[user_id][product_id] += 1
-            else:
-                cart[user_id][product_id] = 1
-            update_button_text(call.message.chat.id, call.message.message_id, product_id)
-        elif call.data.startswith("plus_"):
-            if product_id in cart[user_id]:
-                cart[user_id][product_id] += 1
-            else:
-                cart[user_id][product_id] = 1
-            update_button_text(call.message.chat.id, call.message.message_id, product_id)
-        elif call.data.startswith("minus_"):
-            if product_id in cart[user_id]:
-                if product_id not in cart[user_id]:
-                    bot.answer_callback_query(call.id, "Чтобы уменьшать количество штук нужно добавить товар в "
-                                                       "корзину!")
+        if call.data not in days_week:
+            if call.data not in ["time_14:30 - 17:30", "time_10:00 - 14:00", "time_18:00 - 22:00"]:
+                if call.data != "user_data":
+                    product_id = int(call.data[call.data.find("_") + 1:])
+                if user_id not in cart:
+                    cart[user_id] = {}
+                if call.data.startswith("add_"):
+                    if product_id in cart[user_id]:
+                        cart[user_id][product_id] += 1
+                    else:
+                        cart[user_id][product_id] = 1
+                    update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                elif call.data.startswith("plus_"):
+                    if product_id in cart[user_id]:
+                        cart[user_id][product_id] += 1
+                    else:
+                        cart[user_id][product_id] = 1
+                    update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                elif call.data.startswith("minus_"):
+                    if product_id in cart[user_id]:
+                        if product_id not in cart[user_id]:
+                            bot.answer_callback_query(call.id, "Чтобы уменьшать количество штук нужно добавить товар в "
+                                                               "корзину!")
+                        else:
+                            cart[user_id][product_id] -= 1
+                            update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                        if cart[user_id][product_id] == 0:
+                            del cart[user_id][product_id]
+                            update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                elif call.data == "user_data":
+                    username(call.message)
                 else:
-                    cart[user_id][product_id] -= 1
-                    update_button_text(call.message.chat.id, call.message.message_id, product_id)
-                if cart[user_id][product_id] == 0:
-                    del cart[user_id][product_id]
-                    update_button_text(call.message.chat.id, call.message.message_id, product_id)
-        elif call.data == "user_data":
-            username(call.message)
+                    bot.answer_callback_query(call.id, "Invalid callback data")
+            else:
+                delivery_time = call.data.split("_")[-1]
+                process_delivery_time_step(choose_day_msg, client_name, client_phone, address, delivery_day, delivery_time)
         else:
-            bot.answer_callback_query(call.id, "Invalid callback data")
+            delivery_day = call.data
+            process_delivery_day_step(choose_day_msg, client_name, client_phone, address, delivery_day)
     else:
         global model
         model = call.data
@@ -216,13 +226,28 @@ def process_phone_step(message, name):
 
 
 def process_address_step(message, name, phone):
+    global choose_day_msg, client_name, client_phone, address
     address = message.text
-    msg = bot.reply_to(message, "Введите время доставки (формат ввода: 10:00 - 14:00):")
-    bot.register_next_step_handler(msg, process_delivery_time_step, name, phone, address)
+    client_name = name
+    client_phone = phone
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="Понедельник", callback_data="Понедельник")],
+                                         [InlineKeyboardButton(text="Вторник", callback_data="Вторник")],
+                                         [InlineKeyboardButton(text="Среда", callback_data="Среда")],
+                                         [InlineKeyboardButton(text="Четверг", callback_data="Четверг")],
+                                         [InlineKeyboardButton(text="Пятница", callback_data="Пятница")],
+                                         [InlineKeyboardButton(text="Суббота", callback_data="Суббота")],
+                                         [InlineKeyboardButton(text="Воскресенье", callback_data="Воскресенье")]])
+    choose_day_msg = bot.reply_to(message, "Выберите день недели:", reply_markup=reply_markup)
 
 
-def process_delivery_time_step(message, name, phone, address):
-    delivery_time = message.text
+def process_delivery_day_step(message, name, phone, address, delivery_day):
+    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="10:00 - 14:00", callback_data="time_10:00 - 14:00")],
+                                         [InlineKeyboardButton(text="14:30 - 17:30", callback_data="time_14:30 - 17:30")],
+                                         [InlineKeyboardButton(text="18:00 - 22:00", callback_data="time_18:00 - 22:00")]])
+    bot.edit_message_reply_markup(chat_id=message.chat.id, message_id=message.message_id, reply_markup=reply_markup)
+
+
+def process_delivery_time_step(message, name, phone, address, delivery_day, delivery_time):
     nasupat = name.split()
     cursor.execute("INSERT INTO client (id_client, tele_id, name_client, surname_client, patronymic_client, number_client, address_client) VALUES (?, ?, ?, ?, ?, ?, ?)",
                    (get_id("client"), str(message.chat.id), nasupat[1], nasupat[0], nasupat[2], str(phone), address))
@@ -233,12 +258,12 @@ def process_delivery_time_step(message, name, phone, address):
     bot.send_message(message.chat.id, f"Спасибо, {name}! Скоро с вами свяжется администратор для подтверждения заказа.")
 
     bot.send_message(message.chat.id,
-                     f"Заказ подтвержден! Ваш заказ будет доставлен курьером с {delivery_time}. Оплата при получении "
+                     f"Заказ подтвержден! Ваш заказ будет доставлен курьером в день недели: {delivery_day} с {delivery_time}. Оплата при получении "
                      f"заказа.")
-    #send_message_admin(name, phone, address)
+    #send_message_admin(name, phone, address, delivery_time)
 
 
-"""def send_message_admin(name, phone, address):
+"""def send_message_admin(name, phone, address, delivery_time):
     admin_username = "" #эта часть кода уведомляет админа о поступлении заказа, в эту переменную нужно указать имя администратора, которому будет приходить сообщение от бота.
     user_id = ""
     try:
@@ -246,7 +271,7 @@ def process_delivery_time_step(message, name, phone, address):
     except Exception as e:
         print('Error:', e)
     if user_id:
-        bot.send_message(chat_id=user_id, text=f"Поступил заказ от {name} с номером телефона {phone} и адресом {address}!")"""
+        bot.send_message(chat_id=user_id, text=f"Поступил заказ от {name} с номером телефона {phone} и адресом {address}! Время желаемой доставки: {delivery_time}")"""
 
 
 bot.polling(none_stop=True)

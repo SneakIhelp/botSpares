@@ -235,6 +235,18 @@ def process_delivery_time_step(message, name, phone, address):
     bot.send_message(message.chat.id,
                      f"Заказ подтвержден! Ваш заказ будет доставлен курьером с {delivery_time}. Оплата при получении "
                      f"заказа.")
+    send_message_admin()
+
+
+"""def send_message_admin(name, phone, address):
+    admin_username = "" #эта часть кода уведомляет админа о поступлении заказа, в эту переменную нужно указать имя администратора, которому будет приходить сообщение от бота.
+    user_id = ""
+    try:
+        user_id = bot.get_chat(admin_username).id
+    except Exception as e:
+        print('Error:', e)
+    if user_id:
+        bot.send_message(chat_id=user_id, text=f"Поступил заказ от {name} с номером телефона {phone} и адресом {address}!")"""
 
 
 bot.polling(none_stop=True)

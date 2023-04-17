@@ -235,7 +235,7 @@ def process_delivery_time_step(message, name, phone, address):
     bot.send_message(message.chat.id,
                      f"Заказ подтвержден! Ваш заказ будет доставлен курьером с {delivery_time}. Оплата при получении "
                      f"заказа.")
-    send_message_admin()
+    #send_message_admin(name, phone, address)
 
 
 """def send_message_admin(name, phone, address):

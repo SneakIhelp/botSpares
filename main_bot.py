@@ -171,10 +171,6 @@ def update_button_text(chat_id, message_id, product_id):
     bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=reply_markup)
 
 
-def check_correct_number(number):
-    return re.match(r'^(\+7|7|8)?[\s\-]?\(?[489][0-9]{2}\)?[\s\-]?[0-9]{3}[\s\-]?[0-9]{2}[\s\-]?[0-9]{2}$', number)
-
-
 @bot.message_handler(commands=['cart'])
 def checkout(message):
     user_id = message.from_user.id
@@ -200,7 +196,8 @@ def checkout(message):
                 to_database_product.append(product_id)
                 to_database_quantity.append(quantity)
         cursor.execute("insert into shopping_cart(id_shopping_cart, id_spares, quantity, sum) values (?, ?, ?, ?)",
-                       (id_cart, ";".join([str(r) for r in to_database_product]), ";".join([str(r) for r in to_database_quantity]), total_price))
+                       (id_cart, ";".join([str(r) for r in to_database_product]),
+                        ";".join([str(r) for r in to_database_quantity]), total_price))
         bd.commit()
         message_text = "Ваша корзина:\n\n"
         message_text += "\n".join(products_text)
@@ -210,7 +207,8 @@ def checkout(message):
 
 
 def username(message):
-    msg = bot.reply_to(message, "Пожалуйста, предоставьте выше ФИО. Данные вводите именно в таком порядке и через пробел:")
+    msg = bot.reply_to(message, "Пожалуйста, предоставьте выше ФИО. Данные вводите именно в таком порядке и через "
+                                "пробел:")
     bot.register_next_step_handler(msg, process_name_step)
 
 
@@ -250,7 +248,8 @@ def process_delivery_day_step(message):
 
 def process_delivery_time_step(message, name, phone, address, delivery_day, delivery_time):
     nasupat = name.split()
-    cursor.execute("INSERT INTO dbo.client (id_client, tele_id, name_client, surname_client, patronymic_client, number_client, address_client) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    cursor.execute("INSERT INTO dbo.client (id_client, tele_id, name_client, surname_client, patronymic_client, "
+                   "number_client, address_client) VALUES (?, ?, ?, ?, ?, ?, ?)",
                    (id_client, str(message.chat.id), nasupat[1], nasupat[0], nasupat[2], str(phone), address))
     bd.commit()
     cursor.execute("INSERT INTO dbo.delivery (id_delivery, id_client, id_shopping_cart) VALUES (?, ?, ?)",
@@ -259,8 +258,8 @@ def process_delivery_time_step(message, name, phone, address, delivery_day, deli
     bot.send_message(message.chat.id, f"Спасибо, {name}! Скоро с вами свяжется администратор для подтверждения заказа.")
 
     bot.send_message(message.chat.id,
-                     f"Заказ подтвержден! Ваш заказ будет доставлен курьером в день недели: {delivery_day} с {delivery_time}. Оплата при получении "
-                     f"заказа. Сумма: {total_price}")
+                     f"Заказ подтвержден! Ваш заказ будет доставлен курьером в день недели: {delivery_day} с "
+                     f"{delivery_time}. Оплата при получении заказа. Сумма: {total_price}")
 
 
 bot.polling(none_stop=True)

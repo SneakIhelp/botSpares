@@ -131,7 +131,7 @@ def handle_callback_query(call: CallbackQuery):
         global model
         model = call.data
         bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id,
-                              text=f"Вы выбрали BMW {call.data}. Выберите фары для этой модели из списка.")
+                              text=f"Вы выбрали BMW {call.data}. Выберите деталь для этой модели из списка.")
         choose_products(call.message)
 
 
@@ -139,7 +139,7 @@ def show_products(message):
     chat_id = message.chat.id
     bot.send_message(chat_id, "Выберите продукты:")
     for product in products:
-        if models_ind[models.index(model)] == product['id_spares']:
+        if models_ind[models.index(model)] == product['id_model']:
             message_text = f"{product['name_spares']} - ₽{product['price_spares']}"
             quantity = 0
             if message.chat.id in cart and product["id_spares"] in cart[message.chat.id]:

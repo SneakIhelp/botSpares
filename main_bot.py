@@ -1,7 +1,6 @@
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 import pyodbc
-import re
 
 API_TOKEN = '6032353284:AAHf53QoE8Uj4nJ_H3PGuBFaxYQMvwDll20'
 bot = telebot.TeleBot(API_TOKEN)
@@ -42,8 +41,8 @@ rows = cursor.fetchall()
 id_delivery = int(len(rows) + 1)
 
 
-current_state = 0
-num_states = 0
+current_state = {}
+num_states = {}
 cart = {}
 
 
@@ -80,8 +79,11 @@ def choose_products(message):
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call: CallbackQuery):
+    global delivery_day, num_states, user_id
     user_id = call.from_user.id
-    global delivery_day, num_states
+    if user_id not in num_states:
+        num_states[user_id] = 0
+        current_state[user_id] = 0
     days_week = ["Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"]
     product_id = ""
     if call.data not in models:
@@ -117,7 +119,7 @@ def handle_callback_query(call: CallbackQuery):
                 elif call.data == "user_data":
                     username(call.message)
                 elif call.data == "back_to_models":
-                    num_states += 1
+                    num_states[user_id] += 1
                     send_welcome(call.message)
                 else:
                     bot.answer_callback_query(call.id, "Invalid callback data")
@@ -149,8 +151,13 @@ def show_products(message):
                 InlineKeyboardButton(text=str(quantity), callback_data=f"quantity_{product['id_spares']}"),
                 InlineKeyboardButton(text="+", callback_data=f"plus_{product['id_spares']}")
             ]
-            reply_markup = InlineKeyboardMarkup(
-                [[InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_{product['id_spares']}")], buttons])
+            if quantity == 0:
+                reply_markup = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_{product['id_spares']}")], buttons])
+            else:
+                reply_markup = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton(text="Добавлено в корзину", callback_data=f"add_{product['id_spares']}")],
+                     buttons])
             bot.send_photo(chat_id, photo=open('photo_for_prod.jpg', 'rb'), caption=message_text, reply_markup=reply_markup)
     bot.send_message(chat_id, "Вернуться назад к моделям:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")]]))
 
@@ -173,15 +180,14 @@ def update_button_text(chat_id, message_id, product_id):
 
 @bot.message_handler(commands=['cart'])
 def checkout(message):
-    user_id = message.from_user.id
     global current_state
-    current_state += 1
-    if current_state != num_states + 1:
+    current_state[user_id] += 1
+    if current_state[user_id] != num_states[user_id] + 1:
         pass
     elif user_id not in cart or not cart[user_id]:
         bot.send_message(chat_id=message.chat.id, text="Ваша корзина пуста.")
     else:
-        global total_price
+        global total_price, to_database_product, to_database_quantity
         total_price = 0
         products_text = []
         to_database_product = []
@@ -195,14 +201,10 @@ def checkout(message):
                 total_price += int(product["price_spares"]) * quantity
                 to_database_product.append(product_id)
                 to_database_quantity.append(quantity)
-        cursor.execute("insert into shopping_cart(id_shopping_cart, id_spares, quantity, sum) values (?, ?, ?, ?)",
-                       (id_cart, ";".join([str(r) for r in to_database_product]),
-                        ";".join([str(r) for r in to_database_quantity]), total_price))
-        bd.commit()
         message_text = "Ваша корзина:\n\n"
         message_text += "\n".join(products_text)
         message_text += f"\n\nИтого: ₽{total_price}"
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="Оформить заказ", callback_data="user_data")]])
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="Оформить заказ", callback_data="user_data")], [InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")]])
         bot.send_message(chat_id=message.chat.id, text=message_text, reply_markup=reply_markup)
 
 
@@ -248,6 +250,10 @@ def process_delivery_day_step(message):
 
 def process_delivery_time_step(message, name, phone, address, delivery_day, delivery_time):
     nasupat = name.split()
+    cursor.execute("insert into shopping_cart(id_shopping_cart, id_spares, quantity, sum) values (?, ?, ?, ?)",
+                   (id_cart, ";".join([str(r) for r in to_database_product]),
+                    ";".join([str(r) for r in to_database_quantity]), total_price))
+    bd.commit()
     cursor.execute("INSERT INTO dbo.client (id_client, tele_id, name_client, surname_client, patronymic_client, "
                    "number_client, address_client) VALUES (?, ?, ?, ?, ?, ?, ?)",
                    (id_client, str(message.chat.id), nasupat[1], nasupat[0], nasupat[2], str(phone), address))

@@ -126,7 +126,7 @@ def handle_callback_query(call: CallbackQuery):
                 process_delivery_time_step(choose_day_msg, client_name, client_phone, address, delivery_day, delivery_time)
         else:
             delivery_day = call.data
-            process_delivery_day_step(choose_day_msg, client_name, client_phone, address, delivery_day)
+            process_delivery_day_step(choose_day_msg)
     else:
         global model
         model = call.data
@@ -261,7 +261,6 @@ def process_delivery_time_step(message, name, phone, address, delivery_day, deli
     bot.send_message(message.chat.id,
                      f"Заказ подтвержден! Ваш заказ будет доставлен курьером в день недели: {delivery_day} с {delivery_time}. Оплата при получении "
                      f"заказа. Сумма: {total_price}")
-
 
 
 bot.polling(none_stop=True)

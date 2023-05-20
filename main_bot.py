@@ -1,6 +1,8 @@
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 import pyodbc
+import io
+from PIL import Image
 
 API_TOKEN = '6032353284:AAHf53QoE8Uj4nJ_H3PGuBFaxYQMvwDll20'
 bot = telebot.TeleBot(API_TOKEN)
@@ -8,7 +10,7 @@ model_answ = {}
 headlights_answ = {}
 
 bd = pyodbc.connect('Driver={SQL Server};'
-                    'Server=DESKTOP\\SQLEXPRESS;'
+                    'Server=DESKTOP-T5QI3N7\\SQLEXPRESS;'
                     'Database=bottg;'
                     'Trusted_Connection=yes;')
 cursor = bd.cursor()
@@ -71,15 +73,17 @@ def choose_products(message):
     global cart
     model_answ[message.chat.id] = message.text
     user_id = message.from_user.id
-    if not cart.get(user_id):
-        show_products(message)
-        bot.send_message(chat_id=message.chat.id, text="Чтобы перейти к корзине, напишите, '/cart'!")
+    if not cart.get(user_id) and not flag:
+        show_categories(message)
         bot.register_next_step_handler(message, checkout)
 
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback_query(call: CallbackQuery):
-    global delivery_day, num_states, user_id
+    if call.data == "/cart" or call.data == "/start":
+        return
+    global delivery_day, num_states, user_id, flag
+    flag = 0
     user_id = call.from_user.id
     if user_id not in num_states:
         num_states[user_id] = 0
@@ -88,44 +92,57 @@ def handle_callback_query(call: CallbackQuery):
     product_id = ""
     if call.data not in models:
         if call.data not in days_week:
-            if call.data not in ["time_14:30 - 17:30", "time_10:00 - 14:00", "time_18:00 - 22:00"]:
-                if call.data != "user_data" and call.data != "back_to_models":
-                    product_id = int(call.data[call.data.find("_") + 1:])
-                if user_id not in cart:
-                    cart[user_id] = {}
-                if call.data.startswith("add_"):
-                    if product_id in cart[user_id]:
-                        cart[user_id][product_id] += 1
-                    else:
-                        cart[user_id][product_id] = 1
-                    update_button_text(call.message.chat.id, call.message.message_id, product_id)
-                elif call.data.startswith("plus_"):
-                    if product_id in cart[user_id]:
-                        cart[user_id][product_id] += 1
-                    else:
-                        cart[user_id][product_id] = 1
-                    update_button_text(call.message.chat.id, call.message.message_id, product_id)
-                elif call.data.startswith("minus_"):
-                    if product_id in cart[user_id]:
-                        if product_id not in cart[user_id]:
-                            bot.answer_callback_query(call.id, "Чтобы уменьшать количество штук нужно добавить товар в "
-                                                               "корзину!")
+            if not call.data.startswith("category_"):
+                if call.data not in ["time_14:30 - 17:30", "time_10:00 - 14:00", "time_18:00 - 22:00"]:
+                    if call.data != "user_data" and call.data != "back_to_models" and call.data != "back_to_cat" and call.data != "clear_cart":
+                        product_id = int(call.data[call.data.find("_") + 1:])
+                    if user_id not in cart:
+                        cart[user_id] = {}
+                    if call.data.startswith("add_"):
+                        if product_id in cart[user_id]:
+                            cart[user_id][product_id] += 1
                         else:
-                            cart[user_id][product_id] -= 1
-                            update_button_text(call.message.chat.id, call.message.message_id, product_id)
-                        if cart[user_id][product_id] == 0:
-                            del cart[user_id][product_id]
-                            update_button_text(call.message.chat.id, call.message.message_id, product_id)
-                elif call.data == "user_data":
-                    username(call.message)
-                elif call.data == "back_to_models":
-                    num_states[user_id] += 1
-                    send_welcome(call.message)
+                            cart[user_id][product_id] = 1
+                        update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                    elif call.data == "clear_cart":
+                        del cart[user_id]
+                        num_states[user_id] = 0
+                        flag = 1
+                        current_state[user_id] = 1
+                        bot.answer_callback_query(call.id, "Корзина очищена.")
+                    elif call.data.startswith("plus_"):
+                        if product_id in cart[user_id]:
+                            cart[user_id][product_id] += 1
+                        else:
+                            cart[user_id][product_id] = 1
+                        update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                    elif call.data.startswith("minus_"):
+                        if product_id in cart[user_id]:
+                            if product_id not in cart[user_id]:
+                                bot.answer_callback_query(call.id, "Чтобы уменьшать количество штук нужно добавить товар в "
+                                                                   "корзину!")
+                            else:
+                                cart[user_id][product_id] -= 1
+                                update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                            if user_id in cart and cart[user_id][product_id] == 0:
+                                del cart[user_id][product_id]
+                                update_button_text(call.message.chat.id, call.message.message_id, product_id)
+                    elif call.data == "user_data":
+                        username(call.message)
+                    elif call.data == "back_to_models":
+                        num_states[user_id] += 1
+                        send_welcome(call.message)
+                    elif call.data == "back_to_cat":
+                        show_categories(call.message)
+                    else:
+                        bot.answer_callback_query(call.id, "Invalid callback data")
+
                 else:
-                    bot.answer_callback_query(call.id, "Invalid callback data")
+                    delivery_time = call.data.split("_")[-1]
+                    process_delivery_time_step(choose_day_msg, client_name, client_phone, address, delivery_day, delivery_time)
             else:
-                delivery_time = call.data.split("_")[-1]
-                process_delivery_time_step(choose_day_msg, client_name, client_phone, address, delivery_day, delivery_time)
+                category = call.data.split("_")[1]
+                show_products(call.message, category)
         else:
             delivery_day = call.data
             process_delivery_day_step(choose_day_msg)
@@ -137,11 +154,40 @@ def handle_callback_query(call: CallbackQuery):
         choose_products(call.message)
 
 
-def show_products(message):
+def show_categories(message):
+    if message.text == "/cart" or message.text == "/start":
+        return
+    global categories
+    chat_id = message.chat.id
+    categories_temp = set()
+    for product in products:
+        if models_ind[models.index(model)] == product['id_model']:
+            categories_temp.add(product['category'])
+    keyboard = InlineKeyboardMarkup()
+    categories = list(categories_temp)
+    for category in categories:
+        button = InlineKeyboardButton(text=category, callback_data=f"category_{category}")
+        keyboard.add(button)
+    bot.send_message(chat_id, "Выберите категорию продуктов:", reply_markup=keyboard)
+    bot.send_message(chat_id, "Вернуться назад к моделям:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")]]))
+    bot.send_message(chat_id=message.chat.id, text="Чтобы перейти к корзине, напишите, '/cart'!")
+
+
+def get_photo(row_id):
+    sql_query = f"SELECT ImageData FROM spares WHERE id_spares = ?"
+    cursor = bd.cursor()
+    cursor.execute(sql_query, (row_id,))
+    result = cursor.fetchone()
+    photo_data = result[0]
+    image = Image.open(io.BytesIO(photo_data))
+    return image
+
+
+def show_products(message, category):
     chat_id = message.chat.id
     bot.send_message(chat_id, "Выберите продукты:")
     for product in products:
-        if models_ind[models.index(model)] == product['id_model']:
+        if models_ind[models.index(model)] == product['id_model'] and product['category'] == category:
             message_text = f"{product['name_spares']} - ₽{product['price_spares']}"
             quantity = 0
             if message.chat.id in cart and product["id_spares"] in cart[message.chat.id]:
@@ -158,8 +204,14 @@ def show_products(message):
                 reply_markup = InlineKeyboardMarkup(
                     [[InlineKeyboardButton(text="Добавлено в корзину", callback_data=f"add_{product['id_spares']}")],
                      buttons])
-            bot.send_photo(chat_id, photo=open('photo_for_prod.jpg', 'rb'), caption=message_text, reply_markup=reply_markup)
-    bot.send_message(chat_id, "Вернуться назад к моделям:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")]]))
+            image = get_photo(int(product['id_spares']))
+            with io.BytesIO() as image_buffer:
+                image.save(image_buffer, format='JPEG')
+                image_buffer.seek(0)
+                with open('photo_for_prod.jpg', 'wb') as file:
+                    file.write(image_buffer.read())
+                bot.send_photo(chat_id, photo=open('photo_for_prod.jpg', 'rb'), caption=message_text, reply_markup=reply_markup)
+    bot.send_message(chat_id, "Вернуться назад к категориям:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Назад", callback_data=f"back_to_cat")]]))
 
 
 def update_button_text(chat_id, message_id, product_id):
@@ -180,6 +232,7 @@ def update_button_text(chat_id, message_id, product_id):
 
 @bot.message_handler(commands=['cart'])
 def checkout(message):
+    user_id = message.from_user.id
     global current_state
     current_state[user_id] += 1
     if current_state[user_id] != num_states[user_id] + 1:
@@ -204,7 +257,7 @@ def checkout(message):
         message_text = "Ваша корзина:\n\n"
         message_text += "\n".join(products_text)
         message_text += f"\n\nИтого: ₽{total_price}"
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="Оформить заказ", callback_data="user_data")], [InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")]])
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="Оформить заказ", callback_data="user_data")], [InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")], [InlineKeyboardButton(text="Очистить корзину", callback_data=f"clear_cart")]])
         bot.send_message(chat_id=message.chat.id, text=message_text, reply_markup=reply_markup)
 
 
@@ -215,7 +268,9 @@ def username(message):
 
 
 def process_name_step(message):
+    global msg_user
     name = message.text
+    msg_user = message
     msg = bot.reply_to(message, "Теперь, введите ваш номер телефона в формате +79XXXXXXXXX:")
     bot.register_next_step_handler(msg, process_phone_step, name)
 
@@ -256,7 +311,7 @@ def process_delivery_time_step(message, name, phone, address, delivery_day, deli
     bd.commit()
     cursor.execute("INSERT INTO dbo.client (id_client, tele_id, name_client, surname_client, patronymic_client, "
                    "number_client, address_client) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                   (id_client, str(message.chat.id), nasupat[1], nasupat[0], nasupat[2], str(phone), address))
+                   (id_client, str(msg_user.from_user.username), nasupat[1], nasupat[0], nasupat[2], str(phone), address))
     bd.commit()
     cursor.execute("INSERT INTO dbo.delivery (id_delivery, id_client, id_shopping_cart) VALUES (?, ?, ?)",
                    (id_delivery, id_client, id_cart))

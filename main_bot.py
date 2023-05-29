@@ -1,7 +1,9 @@
+import time
 import telebot
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 import pyodbc
 import io
+import base64
 from PIL import Image
 
 API_TOKEN = '6032353284:AAHf53QoE8Uj4nJ_H3PGuBFaxYQMvwDll20'
@@ -16,33 +18,17 @@ bd = pyodbc.connect('Driver={SQL Server};'
 cursor = bd.cursor()
 
 cursor.execute('SELECT * FROM dbo.spares')
-
 columns = [column[0] for column in cursor.description]
 rows = cursor.fetchall()
 products = []
-models = []
-models_ind = []
 num_row = 0
-
 for row in rows:
     products.append({})
     for i in range(len(columns)):
         products[num_row][columns[i]] = row[i]
     num_row += 1
-global id_cart, id_client, id_delivery
-cursor.execute(f'SELECT * FROM dbo.shopping_cart')
-rows = cursor.fetchall()
-id_cart = int(len(rows) + 1)
 
-cursor.execute(f'SELECT * FROM dbo.client')
-rows = cursor.fetchall()
-id_client = int(len(rows) + 1)
-
-cursor.execute(f'SELECT * FROM dbo.delivery')
-rows = cursor.fetchall()
-id_delivery = int(len(rows) + 1)
-
-
+users = {}
 current_state = {}
 num_states = {}
 cart = {}
@@ -53,6 +39,7 @@ def send_welcome(message):
     cursor.execute('SELECT * FROM dbo.models')
 
     global models, models_ind
+    models, models_ind = [], []
     columns = [column[0] for column in cursor.description]
     rows = cursor.fetchall()
     keyboard = InlineKeyboardMarkup()
@@ -119,8 +106,9 @@ def handle_callback_query(call: CallbackQuery):
                     elif call.data.startswith("minus_"):
                         if product_id in cart[user_id]:
                             if product_id not in cart[user_id]:
-                                bot.answer_callback_query(call.id, "Чтобы уменьшать количество штук нужно добавить товар в "
-                                                                   "корзину!")
+                                bot.answer_callback_query(call.id,
+                                                          "Чтобы уменьшать количество штук нужно добавить товар в "
+                                                          "корзину!")
                             else:
                                 cart[user_id][product_id] -= 1
                                 update_button_text(call.message.chat.id, call.message.message_id, product_id)
@@ -139,7 +127,8 @@ def handle_callback_query(call: CallbackQuery):
 
                 else:
                     delivery_time = call.data.split("_")[-1]
-                    process_delivery_time_step(choose_day_msg, client_name, client_phone, address, delivery_day, delivery_time)
+                    process_delivery_time_step(choose_day_msg, client_name, client_phone, address, delivery_day,
+                                               delivery_time)
             else:
                 category = call.data.split("_")[1]
                 show_products(call.message, category)
@@ -160,6 +149,18 @@ def show_categories(message):
     global categories
     chat_id = message.chat.id
     categories_temp = set()
+
+    cursor.execute('SELECT * FROM dbo.spares')
+    columns = [column[0] for column in cursor.description]
+    rows = cursor.fetchall()
+    products = []
+    num_row = 0
+    for row in rows:
+        products.append({})
+        for i in range(len(columns)):
+            products[num_row][columns[i]] = row[i]
+        num_row += 1
+
     for product in products:
         if models_ind[models.index(model)] == product['id_model']:
             categories_temp.add(product['category'])
@@ -169,7 +170,8 @@ def show_categories(message):
         button = InlineKeyboardButton(text=category, callback_data=f"category_{category}")
         keyboard.add(button)
     bot.send_message(chat_id, "Выберите категорию продуктов:", reply_markup=keyboard)
-    bot.send_message(chat_id, "Вернуться назад к моделям:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")]]))
+    bot.send_message(chat_id, "Вернуться назад к моделям:", reply_markup=InlineKeyboardMarkup(
+        [[InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")]]))
     bot.send_message(chat_id=message.chat.id, text="Чтобы перейти к корзине, напишите, '/cart'!")
 
 
@@ -178,14 +180,21 @@ def get_photo(row_id):
     cursor = bd.cursor()
     cursor.execute(sql_query, (row_id,))
     result = cursor.fetchone()
-    photo_data = result[0]
-    image = Image.open(io.BytesIO(photo_data))
+    try:
+        photo_data = bytes(result[0])
+        image = Image.open(io.BytesIO(photo_data))
+    except:
+        photo_data = bytes(result[0])
+        decoded_data = base64.b64decode(photo_data)
+        image = Image.open(io.BytesIO(decoded_data))
+
     return image
 
 
 def show_products(message, category):
     chat_id = message.chat.id
     bot.send_message(chat_id, "Выберите продукты:")
+
     for product in products:
         if models_ind[models.index(model)] == product['id_model'] and product['category'] == category:
             message_text = f"{product['name_spares']} - ₽{product['price_spares']}"
@@ -199,7 +208,8 @@ def show_products(message, category):
             ]
             if quantity == 0:
                 reply_markup = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_{product['id_spares']}")], buttons])
+                    [[InlineKeyboardButton(text="Добавить в корзину", callback_data=f"add_{product['id_spares']}")],
+                     buttons])
             else:
                 reply_markup = InlineKeyboardMarkup(
                     [[InlineKeyboardButton(text="Добавлено в корзину", callback_data=f"add_{product['id_spares']}")],
@@ -210,8 +220,10 @@ def show_products(message, category):
                 image_buffer.seek(0)
                 with open('photo_for_prod.jpg', 'wb') as file:
                     file.write(image_buffer.read())
-                bot.send_photo(chat_id, photo=open('photo_for_prod.jpg', 'rb'), caption=message_text, reply_markup=reply_markup)
-    bot.send_message(chat_id, "Вернуться назад к категориям:", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="Назад", callback_data=f"back_to_cat")]]))
+                bot.send_photo(chat_id, photo=open('photo_for_prod.jpg', 'rb'), caption=message_text,
+                               reply_markup=reply_markup)
+    bot.send_message(chat_id, "Вернуться назад к категориям:", reply_markup=InlineKeyboardMarkup(
+        [[InlineKeyboardButton(text="Назад", callback_data=f"back_to_cat")]]))
 
 
 def update_button_text(chat_id, message_id, product_id):
@@ -257,7 +269,10 @@ def checkout(message):
         message_text = "Ваша корзина:\n\n"
         message_text += "\n".join(products_text)
         message_text += f"\n\nИтого: ₽{total_price}"
-        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="Оформить заказ", callback_data="user_data")], [InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")], [InlineKeyboardButton(text="Очистить корзину", callback_data=f"clear_cart")]])
+        reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="Оформить заказ", callback_data="user_data")],
+                                             [InlineKeyboardButton(text="Назад", callback_data=f"back_to_models")], [
+                                                 InlineKeyboardButton(text="Очистить корзину",
+                                                                      callback_data=f"clear_cart")]])
         bot.send_message(chat_id=message.chat.id, text=message_text, reply_markup=reply_markup)
 
 
@@ -297,30 +312,87 @@ def process_address_step(message, name, phone):
 
 
 def process_delivery_day_step(message):
-    reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton(text="10:00 - 14:00", callback_data="time_10:00 - 14:00")],
-                                         [InlineKeyboardButton(text="14:30 - 17:30", callback_data="time_14:30 - 17:30")],
-                                         [InlineKeyboardButton(text="18:00 - 22:00", callback_data="time_18:00 - 22:00")]])
+    reply_markup = InlineKeyboardMarkup(
+        [[InlineKeyboardButton(text="10:00 - 14:00", callback_data="time_10:00 - 14:00")],
+         [InlineKeyboardButton(text="14:30 - 17:30", callback_data="time_14:30 - 17:30")],
+         [InlineKeyboardButton(text="18:00 - 22:00", callback_data="time_18:00 - 22:00")]])
     bot.edit_message_reply_markup(chat_id=message.chat.id, message_id=message.message_id, reply_markup=reply_markup)
 
 
 def process_delivery_time_step(message, name, phone, address, delivery_day, delivery_time):
+    chat_id = message.chat.id
     nasupat = name.split()
+
+    cursor.execute(f'SELECT * FROM dbo.shopping_cart')
+    rows = cursor.fetchall()
+    id_cart = int(len(rows) + 1)
+
+    cursor.execute(f'SELECT * FROM dbo.client')
+    rows = cursor.fetchall()
+    id_client = int(len(rows) + 1)
+
+    cursor.execute(f'SELECT * FROM dbo.delivery')
+    rows = cursor.fetchall()
+    id_delivery = int(len(rows) + 1)
+
     cursor.execute("insert into shopping_cart(id_shopping_cart, id_spares, quantity, sum) values (?, ?, ?, ?)",
                    (id_cart, ";".join([str(r) for r in to_database_product]),
                     ";".join([str(r) for r in to_database_quantity]), total_price))
+
     bd.commit()
     cursor.execute("INSERT INTO dbo.client (id_client, tele_id, name_client, surname_client, patronymic_client, "
                    "number_client, address_client) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                   (id_client, str(msg_user.from_user.username), nasupat[1], nasupat[0], nasupat[2], str(phone), address))
+                   (id_client, str(msg_user.from_user.username), nasupat[1], nasupat[0], nasupat[2], str(phone),
+                    address))
+
     bd.commit()
-    cursor.execute("INSERT INTO dbo.delivery (id_delivery, id_client, id_shopping_cart) VALUES (?, ?, ?)",
-                   (id_delivery, id_client, id_cart))
+    cursor.execute("INSERT INTO dbo.delivery (id_delivery, id_client, id_shopping_cart, delivery_time) VALUES (?, ?, ?, ?)",
+                   (id_delivery, id_client, id_cart, delivery_day + " " + delivery_time))
+
     bd.commit()
+    users[msg_user.from_user.username] = [chat_id, id_delivery]
     bot.send_message(message.chat.id, f"Спасибо, {name}! Скоро с вами свяжется администратор для подтверждения заказа.")
 
-    bot.send_message(message.chat.id,
-                     f"Заказ подтвержден! Ваш заказ будет доставлен курьером в день недели: {delivery_day} с "
-                     f"{delivery_time}. Оплата при получении заказа. Сумма: {total_price}")
+    handle_database_changes(id_delivery, delivery_time)
+
+
+def handle_database_changes(id_delivery, delivery_time):
+    query = "SELECT id_delivery, confirmation FROM delivery WHERE confirmation IN ('Одобрено', 'Отклонено') AND id_delivery = ?"
+    last_state = set()
+
+    while True:
+        cursor.execute(query, id_delivery)
+        current_state = set(tuple(row) for row in cursor.fetchall())
+
+        new_items = current_state - last_state
+        for item in new_items:
+            id_delivery, confirmation = item
+            if confirmation == 'Одобрено':
+                for user_id, chat_id in users.items():
+                    if id_delivery in chat_id:
+
+                        query_delivery = "SELECT delivery_time FROM delivery WHERE id_delivery = ?"
+                        cursor.execute(query_delivery, id_delivery)
+                        result_delivery = cursor.fetchone()
+                        delivery_time = result_delivery[0].split()
+
+                        query_shopping_cart = "SELECT sum FROM shopping_cart WHERE id_shopping_cart = ?"
+                        cursor.execute(query_shopping_cart, id_delivery)
+                        result_shopping_cart = cursor.fetchone()
+                        total_sum = result_shopping_cart[0] if result_shopping_cart else None
+
+                        bot.send_message(chat_id[0],
+                                         f"Заказ подтвержден! Ваш заказ будет доставлен курьером в день недели: {delivery_time[0]} с "
+                                         f"{delivery_time[1]}. Оплата при получении заказа. Сумма: {total_sum}")
+
+            if confirmation == 'Отклонено':
+                for user_id, chat_id in users.items():
+                    if id_delivery in chat_id:
+                        bot.send_message(chat_id[0],
+                                         "К сожалению, ваш заказ был отклонён администратором, попробуйте ещё раз позднее!")
+
+        last_state = current_state
+        time.sleep(10)
 
 
 bot.polling(none_stop=True)

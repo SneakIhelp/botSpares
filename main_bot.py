@@ -5,7 +5,7 @@ import io
 import base64
 from PIL import Image
 
-API_TOKEN = '6032353284:AAHf53QoE8Uj4nJ_H3PGuBFaxYQMvwDll20'
+API_TOKEN = ''
 bot = telebot.TeleBot(API_TOKEN)
 model_answ = {}
 headlights_answ = {}

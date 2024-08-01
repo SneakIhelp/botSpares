@@ -11,7 +11,7 @@ model_answ = {}
 headlights_answ = {}
 
 bd = pyodbc.connect('Driver={SQL Server};'
-                    'Server=DESKTOP-DDQLO7P\\SQL;'
+                    'Server=localhost\\SQL;'
                     'Database=bottg;'
                     'Trusted_Connection=yes;')
 cursor = bd.cursor()
